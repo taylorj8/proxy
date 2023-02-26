@@ -1,7 +1,9 @@
 import java.io.*;
 import java.net.Socket;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
+import java.util.stream.Collectors;
 
 class Proxy {
 
@@ -20,6 +22,7 @@ class Proxy {
 
         try {
             socket = new ServerSocket(localPort);
+//            System.out.println(socket.getLocalSocketAddress());
             listener.go();
         }
         catch(java.lang.Exception e) {e.printStackTrace();}
@@ -61,6 +64,11 @@ class Proxy {
                         client = socket.accept();
                         final InputStream fromClient = client.getInputStream();
                         final OutputStream toClient = client.getOutputStream();
+
+                        String text = new BufferedReader(new InputStreamReader(fromClient,
+                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
+
+                        System.out.println(text);
 
                         try
                         {
@@ -129,7 +137,7 @@ class Proxy {
     }
 
 
-    private void start() throws InterruptedException
+    private synchronized void start() throws InterruptedException
     {
         System.out.println("Proxy Server running");
         this.wait();
