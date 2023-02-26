@@ -1,8 +1,9 @@
 import java.io.*;
-import java.net.*;
+import java.net.Socket;
+import java.net.ServerSocket;
 import java.util.concurrent.CountDownLatch;
 
-public class Proxy {
+class Proxy {
 
     ServerSocket socket;
     CountDownLatch latch;
@@ -29,13 +30,6 @@ public class Proxy {
         listener = new Listener();
         listener.setDaemon(true);
         listener.start();
-    }
-
-
-    //todo
-    public void onReceipt(/* something */)
-    {
-
     }
 
 
@@ -119,7 +113,7 @@ public class Proxy {
     }
 
     // function for passing request from client to server or reply from server to client
-    public void pass(byte[] re, InputStream from, OutputStream to)
+    private void pass(byte[] re, InputStream from, OutputStream to)
     {
         int bytesRead;
         try
@@ -135,13 +129,17 @@ public class Proxy {
     }
 
 
-
+    private void start() throws InterruptedException
+    {
+        System.out.println("Proxy Server running");
+        this.wait();
+    }
 
     // Main function - creates Proxy server
     public static void main(String[] args) {
 
         try {
-            (new Proxy(DEFAULT_SRC_PORT, WORKER_PORT)).start();
+            (new Proxy(1025, 1026)).start();
             System.out.println("Program completed");
         } catch(java.lang.Exception e) {e.printStackTrace();}
     }
