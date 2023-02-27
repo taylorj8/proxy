@@ -3,6 +3,8 @@ import java.net.Socket;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 class Proxy {
@@ -65,14 +67,28 @@ class Proxy {
                         final InputStream fromClient = client.getInputStream();
                         final OutputStream toClient = client.getOutputStream();
 
-                        String text = new BufferedReader(new InputStreamReader(fromClient,
+                        String header = new BufferedReader(new InputStreamReader(fromClient,
                                 StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
 
-                        System.out.println(text);
+                        System.out.println(header);
+
+                        Pattern p = Pattern.compile("(?<=Host: ).*(?=\\R)");
+                        Matcher m = p.matcher(header);
+                        boolean matchFound = m.find();
+
+                        String host = "";
+                        int port = 0;
+                        if(matchFound)
+                        {
+                            String[] host_port = m.group().split(":");
+                            host = host_port[0];
+                            port = Integer.parseInt(host_port[1]);
+                        }
 
                         try
                         {
-                            server = new Socket(hostName, remotePort);
+                            //todo need port
+                            server = new Socket(host, port);
                         } catch(IOException e)
                         {
                             PrintWriter out = new PrintWriter(toClient);
@@ -84,6 +100,11 @@ class Proxy {
 
                         final InputStream fromServer = server.getInputStream();
                         final OutputStream toServer = server.getOutputStream();
+
+                        String ret = new BufferedReader(new InputStreamReader(fromServer,
+                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
+
+                        System.out.println(ret);
 
                         Thread t = new Thread(() -> {
 
