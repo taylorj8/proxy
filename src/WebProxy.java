@@ -73,30 +73,16 @@ class WebProxy {
                         final InputStream fromClient = client.getInputStream();
                         final OutputStream toClient = client.getOutputStream();
 
-                        pass(request, fromClient, toClient);
+                        BufferedReader reader = new BufferedReader(new InputStreamReader(fromClient));
+                        String line = reader.readLine();
+                        System.out.println(line);
 
-                        String header = new BufferedReader(new InputStreamReader(fromClient,
-                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
-
-                        System.out.println(header);
-
-                        // get all the line after "Host:"
-                        Matcher m = patterns[0].matcher(header);
-                        boolean matchFound = m.find();
-
-                        String host = "";
-                        int port = 0;
-                        if(matchFound)
-                        {
-                            String[] host_port = m.group().split(":");
-                            host = host_port[0];
-                            if(host_port.length >= 2)
-                                port = Integer.parseInt(host_port[1]);
-                        }
+                        String[] segments = line.split(" ");
+                        String host = reader.readLine();
 
                         try
                         {
-                            server = new Socket(host, port);
+                            server = new Socket(host.split(" ")[1], 443);
                         } catch(IOException e)
                         {
                             PrintWriter out = new PrintWriter(toClient);
@@ -106,51 +92,40 @@ class WebProxy {
                             continue;
                         }
 
-                        // todo
-
                         final InputStream fromServer = server.getInputStream();
                         final OutputStream toServer = server.getOutputStream();
 
-//                        PrintWriter pr = new PrintWriter(toServer);
-//
-//                        m = patterns[1].matcher(header);
-//                        matchFound = m.find();
-//                        if(matchFound)
-//                        {
-//                            String[] firstLine = m.group().split(" ");
-//                            switch(firstLine[0])
-//                            {
-//                                case "CONNECT":
-//                                    URL url = new URL(firstLine[firstLine.length-1].split("/")[0] + "://" + firstLine[1]);
-//
-//                                    pr.println(request);
-//
-//
-//                                    break;
-//                                case "GET":
-//                                    break;
-//                                default:
-//                            }
-//                        }
+                        PrintWriter wtr = new PrintWriter(toServer);
+                        String[] temp = segments[1].split("/");
 
+                        if(segments[0].equals("CONNECT") || segments[0].equals("POST"))
+                        {
+                            wtr.println(line);
+                            wtr.println(host);
+                            for(int i = 0; i < 3; i++)
+                            {
+                                wtr.println(reader.readLine());
+                            }
+                            wtr.flush();
+                        }
+                        if(segments[0].equals("GET"))
+                        {
+                            String write = segments[0]+ " " + temp[temp.length-1] + " " + segments[segments.length-1];
+                            wtr.println(write);
+                            wtr.println(host);
+                            wtr.println("");
+                            wtr.flush();
+                        }
 
-                        pass(request, fromClient, toServer);
-//                        Thread t = new Thread(() -> {
-//                            // request is passed from the client to the server
-//
-//                        });
-//
-//                        // start client-to-server request thread
-//                        t.start();
+                        BufferedReader bufRead = new BufferedReader(new InputStreamReader(fromServer));
+                        String outStr;
 
-                        // server's response is passed back to client
-                        pass(reply, fromServer, toClient);
+                        while((outStr = bufRead.readLine()) != null){
+                            System.out.println(outStr);
+                        }
 
-//                        String ret = new BufferedReader(new InputStreamReader(fromServer,
-//                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
-//
-//                        System.out.println(ret);
-
+                        bufRead.close();
+                        wtr.close();
 
                     } catch(Exception e) {
                         e.printStackTrace();
