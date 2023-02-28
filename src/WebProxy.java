@@ -1,6 +1,7 @@
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
+import java.lang.reflect.Array;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -17,7 +18,7 @@ class WebProxy {
     Listener listener;
     String hostName;
     int remotePort;
-    static Pattern pattern;
+    static Pattern[] pattern;
     URLConnection connection;
     ArrayList<String> blacklist;
 
@@ -32,7 +33,9 @@ class WebProxy {
         listener = new Listener();
         listener.setDaemon(true);
 
-        pattern = Pattern.compile("(?<=Host: ).*(?=\\R)");
+        pattern = new Pattern[2];
+        pattern[0] = Pattern.compile(".*(?=\\R)");
+        pattern[1] = Pattern.compile("(?<=Host: ).*(?=\\R)");
 
         try {
             socket = new ServerSocket(localPort);
@@ -44,10 +47,12 @@ class WebProxy {
     static class RequestHandler extends Thread {
 
         private final Socket client;
+        private ArrayList<String> blacklist;
 
-        public RequestHandler(Socket clientSocket)
+        public RequestHandler(Socket clientSocket, ArrayList<String> blacklist)
         {
             this.client = clientSocket;
+            this.blacklist = blacklist;
         }
 
         @Override
@@ -65,49 +70,71 @@ class WebProxy {
                     String strRequest = new String(request, 0, length);
                     System.out.println(strRequest);
 
-                    Matcher m = pattern.matcher(strRequest);
-                    String hostName = "";
-                    int port = 80;
+                    String firstLine = "";
+                    Matcher m = pattern[0].matcher(strRequest);
                     if(m.find())
-                    {
-                        String[] hostPort = m.group().split(":");
-                        hostName = hostPort[0];
+                        firstLine = m.group();
 
-                        if(hostPort.length > 1)
+                    boolean blacklisted = false;
+                    for(String url : blacklist)
+                    {
+                        if(firstLine.contains(url))
                         {
-                            port = Integer.parseInt(hostPort[1]);
-                        }
-                        else if(strRequest.contains("https://"))
-                        {
-                            port = 443;
+                            blacklisted = true;
+                            break;
                         }
                     }
 
-//                    SSLSocketFactory factory = (SSLSocketFactory)SSLSocketFactory.getDefault();
-//                    SSLSocket server = (SSLSocket)factory.createSocket(hostName, port);
-//                    server.startHandshake();
-
-                    Socket server = new Socket(hostName, port);
-                    OutputStream toServer = server.getOutputStream();
-                    toServer.write(request);
-
-                    InputStream fromServer = server.getInputStream();
                     OutputStream toClient = client.getOutputStream();
-
-                    byte[] response = new byte[4096];
-                    int chunkLength;
-                    while((chunkLength = fromServer.read(response)) != -1)
+                    if(!blacklisted)
                     {
-                        toClient.write(response, 0, chunkLength);
-                    }
+                        m = pattern[1].matcher(strRequest);
+                        String hostName = "";
+                        int port = 80;
 
-                    toServer.close();
-                    fromServer.close();
+                        if(m.find())
+                        {
+                            String[] hostPort = m.group().split(":");
+                            hostName = hostPort[0];
+
+                            if(hostPort.length > 1)
+                            {
+                                port = Integer.parseInt(hostPort[1]);
+                            }
+                            else if(strRequest.contains("https://"))
+                            {
+                                port = 443;
+                            }
+
+//                            SSLSocketFactory factory = (SSLSocketFactory)SSLSocketFactory.getDefault();
+//                            SSLSocket server = (SSLSocket)factory.createSocket(hostName, port);
+//                            server.startHandshake();
+
+                            Socket server = new Socket(hostName, port);
+                            OutputStream toServer = server.getOutputStream();
+                            toServer.write(request);
+
+                            InputStream fromServer = server.getInputStream();
+                            byte[] response = new byte[4096];
+                            int chunkLength;
+
+                            while((chunkLength = fromServer.read(response)) != -1)
+                            {
+                                toClient.write(response, 0, chunkLength);
+                            }
+
+                            toServer.close();
+                            fromServer.close();
+                            server.close();
+                        }
+                    }
+                    else
+                    {
+                        toClient.write("This url has been blocked".getBytes());
+                    }
                     toClient.close();
-                    server.close();
                 }
                 fromClient.close();
-
             }
             catch(IOException e) {e.printStackTrace();}
             finally
@@ -140,7 +167,7 @@ class WebProxy {
                     try
                     {
                         client = socket.accept();
-                        new RequestHandler(client).start();
+                        new RequestHandler(client, blacklist).start();
                     }
                     catch(Exception ignored) {}
                 }
