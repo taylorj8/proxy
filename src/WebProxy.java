@@ -1,6 +1,10 @@
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -8,7 +12,7 @@ import java.util.stream.Collectors;
 
 class WebProxy {
 
-    ServerSocket socket;
+    SSLServerSocket socket;
     CountDownLatch latch;
     Listener listener;
     String hostName;
@@ -22,16 +26,15 @@ class WebProxy {
         hostName = "Web Proxy";
         latch = new CountDownLatch(1);
         connection = null;
-        startListener();
-
         pattern = Pattern.compile("(?<=Host: ).*(?=\\R)");
 
+        startListener();
         try {
-            socket = new ServerSocket(localPort);
+            socket = initServerSocket(localPort);
 //            System.out.println(socket.getLocalSocketAddress());
             listener.go();
         }
-        catch(java.lang.Exception e) {e.printStackTrace();}
+        catch(Exception e) {e.printStackTrace();}
     }
 
     private void startListener()
@@ -41,11 +44,32 @@ class WebProxy {
         listener.start();
     }
 
+    //todo understand and change names
+    private SSLServerSocket initServerSocket(int port) throws Exception
+    {
+        KeyStore ks = KeyStore.getInstance("JKS");
+        ks.load(new FileInputStream("keystoreFile.jks"), "keystorePassword".toCharArray());
+
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, "keystorePassword".toCharArray());
+
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance("X509");
+        tmf.init(ks);
+
+        SSLContext sc = SSLContext.getInstance("TLS");
+        TrustManager[] trustManagers = tmf.getTrustManagers();
+        sc.init(kmf.getKeyManagers(), trustManagers, null);
+
+        SSLServerSocketFactory ssf = sc.getServerSocketFactory();
+        return (SSLServerSocket) ssf.createServerSocket(port);
+    }
+
+
     static class RequestHandler extends Thread {
 
-        private final Socket client;
+        private final SSLSocket client;
 
-        public RequestHandler(Socket clientSocket)
+        public RequestHandler(SSLSocket clientSocket)
         {
             this.client = clientSocket;
         }
@@ -80,6 +104,7 @@ class WebProxy {
                     }
 
                     Socket server = new Socket(hostName, port);
+
                     OutputStream toServer = server.getOutputStream();
                     toServer.write(request);
 
@@ -134,10 +159,10 @@ class WebProxy {
                 // Endless loop: attempt to receive packet, notify receivers, etc
                 while(true)
                 {
-                    Socket client = null;
+                    SSLSocket client = null;
                     try
                     {
-                        client = socket.accept();
+                        client = (SSLSocket) socket.accept();
                         new RequestHandler(client).start();
                     }
                     catch(Exception ignored) {}
