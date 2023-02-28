@@ -1,15 +1,12 @@
 import java.io.*;
-import java.net.Socket;
-import java.net.ServerSocket;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.net.URL;
-import java.net.URLConnection;
 
-class Proxy {
+class WebProxy {
 
     ServerSocket socket;
     CountDownLatch latch;
@@ -17,17 +14,19 @@ class Proxy {
     String hostName;
     int remotePort;
     Pattern[] patterns;
+    URLConnection connection;
 
-    Proxy(int localPort, int remotePort) {
+    WebProxy(int localPort, int remotePort) {
 
         this.remotePort = remotePort;
         hostName = "Web Proxy";
         latch = new CountDownLatch(1);
+        connection = null;
         startListener();
 
         patterns = new Pattern[2];
         patterns[0] = Pattern.compile("(?<=Host: ).*(?=\\R)");
-        patterns[1] = Pattern.compile("(?<=CONNECT ).*(?=/)");
+        patterns[1] = Pattern.compile(".*(?=\\R)");
 
         try {
             socket = new ServerSocket(localPort);
@@ -79,7 +78,7 @@ class Proxy {
 
                         System.out.println(header);
 
-                        // get all of line after "Host:"
+                        // get all the line after "Host:"
                         Matcher m = patterns[0].matcher(header);
                         boolean matchFound = m.find();
 
@@ -107,29 +106,24 @@ class Proxy {
 
                         // todo
 
+
                         m = patterns[1].matcher(header);
                         matchFound = m.find();
-
                         if(matchFound)
                         {
-                            String line = m.group();
-                            String[] sections = line.split(" ");
-
-                            URL url = new URL(sections[sections.length-1] + "://" + host);
-                            URLConnection connection = url.openConnection();
-
-                            connection.setDoInput(true);
-                            connection.setDoOutput(false);
-
-                            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-                            connection.setRequestProperty("Content-Language", "en-US");
-                            connection.setUseCaches(false);
-                            connection.setDoOutput(true);
-
-                            System.out.println(connection.getContentLength());
-                            BufferedReader proxyToServerBR = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                            String[] firstLine = m.group().split(" ");
+                            switch(firstLine[0])
+                            {
+                                case "CONNECT":
+                                    URL url = new URL(firstLine[firstLine.length-1].split("/")[0] + "://" + firstLine[1]);
+                                    System.out.println(url);
+                                    connection = url.openConnection();
+                                    break;
+                                case "GET":
+                                    break;
+                                default:
+                            }
                         }
-
 
                         final InputStream fromServer = server.getInputStream();
                         final OutputStream toServer = server.getOutputStream();
@@ -201,7 +195,7 @@ class Proxy {
     public static void main(String[] args) {
 
         try {
-            (new Proxy(4000, 4001)).start();
+            (new WebProxy(4000, 4001)).start();
             System.out.println("Program completed");
         } catch(java.lang.Exception e) {e.printStackTrace();}
     }
