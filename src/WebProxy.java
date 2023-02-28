@@ -73,6 +73,8 @@ class WebProxy {
                         final InputStream fromClient = client.getInputStream();
                         final OutputStream toClient = client.getOutputStream();
 
+                        pass(request, fromClient, toClient);
+
                         String header = new BufferedReader(new InputStreamReader(fromClient,
                                 StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
 
@@ -106,48 +108,52 @@ class WebProxy {
 
                         // todo
 
-
-                        m = patterns[1].matcher(header);
-                        matchFound = m.find();
-                        if(matchFound)
-                        {
-                            String[] firstLine = m.group().split(" ");
-                            switch(firstLine[0])
-                            {
-                                case "CONNECT":
-                                    URL url = new URL(firstLine[firstLine.length-1].split("/")[0] + "://" + firstLine[1]);
-                                    System.out.println(url);
-                                    connection = url.openConnection();
-                                    break;
-                                case "GET":
-                                    break;
-                                default:
-                            }
-                        }
-
                         final InputStream fromServer = server.getInputStream();
                         final OutputStream toServer = server.getOutputStream();
 
-                        String ret = new BufferedReader(new InputStreamReader(fromServer,
-                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
+//                        PrintWriter pr = new PrintWriter(toServer);
+//
+//                        m = patterns[1].matcher(header);
+//                        matchFound = m.find();
+//                        if(matchFound)
+//                        {
+//                            String[] firstLine = m.group().split(" ");
+//                            switch(firstLine[0])
+//                            {
+//                                case "CONNECT":
+//                                    URL url = new URL(firstLine[firstLine.length-1].split("/")[0] + "://" + firstLine[1]);
+//
+//                                    pr.println(request);
+//
+//
+//                                    break;
+//                                case "GET":
+//                                    break;
+//                                default:
+//                            }
+//                        }
 
-                        System.out.println(ret);
 
-                        Thread t = new Thread(() -> {
-
-                            // request is passed from the client to the server
-                            pass(request, fromClient, toServer);
-                        });
-
-                        // start client-to-server request thread
-                        t.start();
+                        pass(request, fromClient, toServer);
+//                        Thread t = new Thread(() -> {
+//                            // request is passed from the client to the server
+//
+//                        });
+//
+//                        // start client-to-server request thread
+//                        t.start();
 
                         // server's response is passed back to client
                         pass(reply, fromServer, toClient);
 
+//                        String ret = new BufferedReader(new InputStreamReader(fromServer,
+//                                StandardCharsets.UTF_8)).lines().collect(Collectors.joining("\n"));
+//
+//                        System.out.println(ret);
 
-                    } catch(IOException e) {
-                        System.err.println(e);
+
+                    } catch(Exception e) {
+                        e.printStackTrace();
                     } finally {
                         try {
                             if(client != null)
