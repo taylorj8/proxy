@@ -6,6 +6,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.net.URL;
+import java.net.URLConnection;
 
 class Proxy {
 
@@ -14,6 +16,7 @@ class Proxy {
     Listener listener;
     String hostName;
     int remotePort;
+    Pattern[] patterns;
 
     Proxy(int localPort, int remotePort) {
 
@@ -21,6 +24,10 @@ class Proxy {
         hostName = "Web Proxy";
         latch = new CountDownLatch(1);
         startListener();
+
+        patterns = new Pattern[2];
+        patterns[0] = Pattern.compile("(?<=Host: ).*(?=\\R)");
+        patterns[1] = Pattern.compile("(?<=CONNECT ).*(?=/)");
 
         try {
             socket = new ServerSocket(localPort);
@@ -72,8 +79,8 @@ class Proxy {
 
                         System.out.println(header);
 
-                        Pattern p = Pattern.compile("(?<=Host: ).*(?=\\R)");
-                        Matcher m = p.matcher(header);
+                        // get all of line after "Host:"
+                        Matcher m = patterns[0].matcher(header);
                         boolean matchFound = m.find();
 
                         String host = "";
@@ -82,12 +89,12 @@ class Proxy {
                         {
                             String[] host_port = m.group().split(":");
                             host = host_port[0];
-                            port = Integer.parseInt(host_port[1]);
+                            if(host_port.length >= 2)
+                                port = Integer.parseInt(host_port[1]);
                         }
 
                         try
                         {
-                            //todo need port
                             server = new Socket(host, port);
                         } catch(IOException e)
                         {
@@ -97,6 +104,32 @@ class Proxy {
                             client.close();
                             continue;
                         }
+
+                        // todo
+
+                        m = patterns[1].matcher(header);
+                        matchFound = m.find();
+
+                        if(matchFound)
+                        {
+                            String line = m.group();
+                            String[] sections = line.split(" ");
+
+                            URL url = new URL(sections[sections.length-1] + "://" + host);
+                            URLConnection connection = url.openConnection();
+
+                            connection.setDoInput(true);
+                            connection.setDoOutput(false);
+
+                            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                            connection.setRequestProperty("Content-Language", "en-US");
+                            connection.setUseCaches(false);
+                            connection.setDoOutput(true);
+
+                            System.out.println(connection.getContentLength());
+                            BufferedReader proxyToServerBR = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                        }
+
 
                         final InputStream fromServer = server.getInputStream();
                         final OutputStream toServer = server.getOutputStream();
