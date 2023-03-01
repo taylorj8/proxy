@@ -1,8 +1,5 @@
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
 import java.net.*;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
@@ -13,36 +10,41 @@ import java.util.regex.Pattern;
 class WebProxy {
 
     ServerSocket socket;
-    CountDownLatch latch;
     Listener listener;
-    String hostName;
-    int remotePort;
     static Pattern[] pattern;
-    URLConnection connection;
     HashSet<String> blacklist;
 
-    WebProxy(int localPort, int remotePort) {
+    WebProxy(int localPort) {
 
-        this.remotePort = remotePort;
-        hostName = "WebProxy";
-        latch = new CountDownLatch(1);
-        connection = null;
+        // contains blocked urls
         blacklist = new HashSet<>();
+        // array of patterns needed for regex
+        pattern = initialisePatterns();
 
+        // initialise the thread that listens to the client
         listener = new Listener();
         listener.setDaemon(true);
 
-        pattern = new Pattern[3];
-        pattern[0] = Pattern.compile(".*(?=\\R)");
-        pattern[1] = Pattern.compile("(?<=Host: ).*(?=\\R)");
-        pattern[2] = Pattern.compile("(?<=CONNECT ).*(?= )");
-
-        try {
+        try
+        {
+            // start server socket on the specified port
             socket = new ServerSocket(localPort);
         }
         catch(java.lang.Exception e) {e.printStackTrace();}
     }
 
+    // add patterns to array
+    private Pattern[] initialisePatterns()
+    {
+        Pattern[] patterns = new Pattern[3];
+        patterns[0] = Pattern.compile(".*(?=\\R)");
+        patterns[1] = Pattern.compile("(?<=Host: ).*(?=\\R)");
+        patterns[2] = Pattern.compile("(?<=CONNECT ).*(?= )");
+
+        return patterns;
+    }
+
+    // thread for handling requests from the client
     static class RequestHandler extends Thread {
 
         private final Socket client;
@@ -246,35 +248,56 @@ class WebProxy {
         }
     }
 
-    static class Blocker extends Thread {
+    // starts threads and waits for input on the console
+    private void start()
+    {
+        listener.start();
+        System.out.println("Proxy running. A URL can be entered at any time to block it.");
 
-        HashSet<String> blacklist;
-        Blocker(HashSet<String> blacklist)
+        Scanner input = new Scanner(System.in);
+        boolean running = true;
+        while(running)
         {
-            this.blacklist = blacklist;
-        }
+            String[] line = input.nextLine().split(" ");
+            String command = line[0];
 
-        @Override
-        public void run()
-        {
-            Scanner input = new Scanner(System.in);
-            while(true)
+            if(line.length == 1)
             {
-                String url = input.nextLine();
-                System.out.printf("Are you sure you want to block \"%s\"? (y/n):\n", url);
+                if(command.equalsIgnoreCase("quit"))
+                {
+                    running = false;
+                }
+                else
+                {
+                    System.out.println("Too few arguments entered");
+                }
+            }
+            else if(line.length > 2)
+            {
+                System.out.println("Too many arguments entered");
+            }
+            else if(command.equals("block") || command.equals("unblock"))
+            {
+                String url = line[1];
+                System.out.printf("Are you sure you want to %s \"%s\"? (y/n):\n", command, url);
 
                 boolean valid = false;
                 while(!valid)
                 {
+
                     if(input.nextLine().equalsIgnoreCase("y"))
                     {
-                        blacklist.add(url);
-                        System.out.println("URL blocked.");
+                        if(command.equals("block"))
+                            blacklist.add(url);
+                        else
+                            blacklist.remove(url);
+
+                        System.out.printf("URL %sed.\n", command);
                         valid = true;
                     }
                     else if(input.nextLine().equalsIgnoreCase("n"))
                     {
-                        System.out.println("URL not blocked.");
+                        System.out.printf("URL not %sed.\n", command);
                         valid = true;
                     }
                     else
@@ -286,21 +309,12 @@ class WebProxy {
         }
     }
 
-    private synchronized void start() throws InterruptedException
-    {
-        listener.start();
-        (new Blocker(blacklist)).start();
-
-        System.out.println("Proxy Server running. A URL can be entered at any time to block it.");
-        this.wait();
-    }
-
     // Main function - creates Proxy server
     public static void main(String[] args) {
 
         try {
-            (new WebProxy(4000, 4001)).start();
-            System.out.println("Program completed");
+            (new WebProxy(4000)).start();
+            System.out.println("Proxy terminated");
         } catch(java.lang.Exception e) {e.printStackTrace();}
     }
 }
