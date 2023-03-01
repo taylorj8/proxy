@@ -2,17 +2,17 @@ import java.io.*;
 import java.net.*;
 import java.util.HashSet;
 import java.util.Scanner;
-import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
 class WebProxy {
 
+    final static int DEFAULT_HTTP_PORT = 80;
     ServerSocket socket;
     Listener listener;
     static Pattern[] pattern;
-    HashSet<String> blacklist;
+    static HashSet<String> blacklist;
 
     WebProxy(int localPort) {
 
@@ -38,8 +38,8 @@ class WebProxy {
     {
         Pattern[] patterns = new Pattern[3];
         patterns[0] = Pattern.compile(".*(?=\\R)");
-        patterns[1] = Pattern.compile("(?<=Host: ).*(?=\\R)");
-        patterns[2] = Pattern.compile("(?<=CONNECT ).*(?= )");
+        patterns[1] = Pattern.compile("(?<=CONNECT ).*(?= )");
+        patterns[2] = Pattern.compile("(?<=Host: ).*(?=\\R)");
 
         return patterns;
     }
@@ -48,12 +48,10 @@ class WebProxy {
     static class RequestHandler extends Thread {
 
         private final Socket client;
-        private HashSet<String> blacklist;
 
-        public RequestHandler(Socket clientSocket, HashSet<String> blacklist)
+        public RequestHandler(Socket clientSocket)
         {
             this.client = clientSocket;
-            this.blacklist = blacklist;
         }
 
         @Override
@@ -95,82 +93,68 @@ class WebProxy {
                             if(m.find())
                                 handleHTTPS(m.group(), fromClient, toClient);
                         }
-
-
-
-                        m = pattern[1].matcher(strRequest);
-                        String hostName = "";
-                        int port = 80;
-
-                        if(m.find())
+                        else
                         {
-                            String[] hostPort = m.group().split(":");
-                            hostName = hostPort[0];
-
-                            if(hostPort.length > 1)
-                            {
-                                port = Integer.parseInt(hostPort[1]);
-                            }
-                            else if(strRequest.contains("https://"))
-                            {
-                                port = 443;
-                            }
-
-//                            SSLSocketFactory factory = (SSLSocketFactory)SSLSocketFactory.getDefault();
-//                            SSLSocket server = (SSLSocket)factory.createSocket(hostName, port);
-//                            server.startHandshake();
-
-                            Socket server = new Socket(hostName, port);
-                            OutputStream toServer = server.getOutputStream();
-                            toServer.write(request);
-
-                            InputStream fromServer = server.getInputStream();
-                            byte[] response = new byte[4096];
-                            int chunkLength;
-
-                            while((chunkLength = fromServer.read(response)) != -1)
-                            {
-                                toClient.write(response, 0, chunkLength);
-                            }
-
-//                            toServer.close();
-//                            fromServer.close();
-//                            server.close();
+                            m = pattern[2].matcher(strRequest);
+                            if(m.find())
+                                handleHTTP(m.group(), toClient, request);
+                            fromClient.close();
+                            toClient.close();
                         }
                     }
                     else
                     {
                         toClient.write("This url has been blocked".getBytes());
                     }
-                    //todo close
-//                    toClient.close();
                 }
-//                fromClient.close();
             }
             catch(IOException e) {e.printStackTrace();}
             finally
             {
-//                try
-//                {
-//                    client.close();
-//                }
-//                catch(IOException e) {e.printStackTrace();}
+                try
+                {
+                    client.close();
+                }
+                catch(IOException e) {e.printStackTrace();}
             }
         }
 
+        private void handleHTTP(String hostName, OutputStream toClient, byte[] request)
+        {
+            try
+            {
+                Socket server = new Socket(hostName, DEFAULT_HTTP_PORT);
+                OutputStream toServer = server.getOutputStream();
+                toServer.write(request);
+
+                InputStream fromServer = server.getInputStream();
+                byte[] response = new byte[4096];
+                int chunkLength;
+
+                while((chunkLength = fromServer.read(response)) != -1)
+                {
+                    toClient.write(response, 0, chunkLength);
+                }
+
+                fromServer.close();
+                toServer.close();
+                server.close();
+
+            } catch(Exception e) {e.printStackTrace();}
+        }
+
+
         private void handleHTTPS(String line, InputStream fromClient, OutputStream toClient)
         {
+            Socket server = null;
             try
             {
                 String[] urlAndPort = line.split(":");
                 String url = urlAndPort[0];
                 int port = Integer.parseInt(urlAndPort[1]);
 
-//                if(!url.startsWith("http://"))
-//                    url = "http://" + url;
-
                 InetAddress address = InetAddress.getByName(url);
-                Socket server = new Socket(address, port);
+                server = new Socket(address, port);
                 server.setSoTimeout(5000);
 
                 toClient.write("Connection established".getBytes());
@@ -178,68 +162,86 @@ class WebProxy {
                 InputStream fromServer = server.getInputStream();
                 OutputStream toServer = server.getOutputStream();
 
-                (new HTTPSTransfer(fromClient, toServer)).start();
-                (new HTTPSTransfer(fromServer, toClient)).start();
+                // start a thread to pass data from the client to the server while
+                // this thread passes data from the server to the client
+                HTTPSHelper helper = new HTTPSHelper(fromClient, toServer);
+                helper.start();
+                pass(fromServer, toClient);
 
+                // wait for thread to finish before closing socket
+                helper.join();
             }
             catch(Exception e) {e.printStackTrace();}
-
-
+            finally
+            {
+                try
+                {
+                    if(server != null)
+                        server.close();
+                }
+                catch(Exception ignored) {}
+            }
         }
     }
 
+    // helper thread for passing data from an inputStream to and outputStream
+    static class HTTPSHelper extends Thread {
 
-    static class HTTPSTransfer extends Thread {
+        InputStream fromStream;
+        OutputStream toStream;
 
-        InputStream in;
-        OutputStream out;
-
-        HTTPSTransfer(InputStream in, OutputStream out)
+        HTTPSHelper(InputStream fromStream, OutputStream toStream)
         {
-            this.in = in;
-            this.out = out;
+            this.fromStream = fromStream;
+            this.toStream = toStream;
         }
 
         @Override
         public void run()
         {
-            try
-            {
-                byte[] buffer  = new byte[4096];
-                int length;
-                while((length = in.read(buffer)) > 0)
-                {
-                    out.write(buffer, 0, length);
-                    if(in.available() <= 0)
-                        out.flush();
-                }
-                in.close();
-                out.close();
-            }
-            catch(Exception ignored) {}
+            pass(fromStream, toStream);
         }
+    }
+
+    private static void pass(InputStream in, OutputStream out)
+    {
+        try
+        {
+            byte[] buffer  = new byte[4096];
+            int length;
+            while((length = in.read(buffer)) > 0)
+            {
+                out.write(buffer, 0, length);
+                if(in.available() <= 0)
+                    out.flush();
+            }
+            in.close();
+            out.close();
+        }
+        catch(Exception ignored) {}
     }
 
 
     /**
      * Listener thread
-     * Listens for incoming packets on a datagram socket and informs registered receivers about incoming packets.
+     * Listens for incoming requests and hands them off to threads to begin listening again
      */
     class Listener extends Thread {
 
-        // Listen for incoming packets and inform receivers
+        // Listen for incoming requests
         @Override
         public void run() {
 
             try {
-                // Endless loop: attempt to receive packet, notify receivers, etc
+
                 while(true)
                 {
                     Socket client = null;
                     try
                     {
+                        // accept request and hand it off to a thread
                         client = socket.accept();
-                        new RequestHandler(client, blacklist).start();
+                        new RequestHandler(client).start();
                     }
                     catch(Exception ignored) {}
                 }
@@ -320,6 +322,7 @@ class WebProxy {
                 System.out.println("Invalid command - commands are block, unblock, quit.");
             }
         }
+        input.close();
     }
 
     // Main function - creates Proxy server
