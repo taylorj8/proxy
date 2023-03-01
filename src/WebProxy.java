@@ -1,7 +1,6 @@
 import java.io.*;
 import java.net.*;
-import java.util.HashSet;
-import java.util.Scanner;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -9,17 +8,17 @@ import java.util.regex.Pattern;
 class WebProxy {
 
     final static int DEFAULT_HTTP_PORT = 80;
-    ServerSocket socket;
     Listener listener;
-    static Pattern[] pattern;
+    ServerSocket socket;
     static HashSet<String> blacklist;
+    static HashMap<String, byte[]> cache;
+    static Pattern[] pattern;
 
     WebProxy(int localPort) {
 
-        // contains blocked urls
-        blacklist = new HashSet<>();
-        // array of patterns needed for regex
-        pattern = initialisePatterns();
+        blacklist = new HashSet<>();        // contains blocked urls
+        cache = new HashMap<>();            // contains cached sites
+        pattern = initialisePatterns();     // array of patterns needed for regex
 
         // initialise the thread that listens to the client
         listener = new Listener();
@@ -40,7 +39,7 @@ class WebProxy {
     {
         Pattern[] patterns = new Pattern[3];
         patterns[0] = Pattern.compile(".*(?=\\R)");
-        patterns[1] = Pattern.compile("(?<=CONNECT ).*(?= )");
+        patterns[1] = Pattern.compile("(?<=CONNECT |GET ).*(?= )");
         patterns[2] = Pattern.compile("(?<=Host: ).*(?=\\R)");
 
         return patterns;
@@ -91,19 +90,23 @@ class WebProxy {
                     OutputStream toClient = client.getOutputStream();
                     if(!blacklisted)
                     {
+                        // get url using regex
+                        String url = "";
+                        m = pattern[1].matcher(strRequest);
+                        if(m.find())
+                            url = m.group();
+
                         // if https, get url and port and pass to https handler
                         if(firstLine.startsWith("CONNECT"))
                         {
-                            m = pattern[1].matcher(strRequest);
-                            if(m.find())
-                                handleHTTPS(m.group(), fromClient, toClient);
+                            handleHTTPS(url, fromClient, toClient);
                         }
                         // if http, get hostname and pass to http handler
                         else
                         {
                             m = pattern[2].matcher(strRequest);
                             if(m.find())
-                                handleHTTP(m.group(), toClient, request);
+                                handleHTTP(m.group(), toClient, request, url);
                             fromClient.close();
                             toClient.close();
                         }
@@ -126,45 +129,42 @@ class WebProxy {
         }
 
         // function for handling http requests
-        private void handleHTTP(String hostName, OutputStream toClient, byte[] request)
+        private void handleHTTP(String hostName, OutputStream toClient, byte[] request, String url)
         {
-            try
+            // if page in cache, fetch it, else get from server
+            if(cache.containsKey(url))
             {
-                Socket server = new Socket(hostName, DEFAULT_HTTP_PORT);
-                OutputStream toServer = server.getOutputStream();
-                toServer.write(request);
-
-                InputStream fromServer = server.getInputStream();
-                byte[] response = new byte[4096];
-                int chunkLength;
-
-                while((chunkLength = fromServer.read(response)) != -1)
+                ByteArrayInputStream fromCache = new ByteArrayInputStream(cache.get(url));
+                pass(fromCache, toClient, false);
+                System.out.println("Page fetched from cache");
+            }
+            else
+            {
+                try(Socket server = new Socket(hostName, DEFAULT_HTTP_PORT))
                 {
-                    toClient.write(response, 0, chunkLength);
+                    OutputStream toServer = server.getOutputStream();
+                    toServer.write(request);
+
+                    InputStream fromServer = server.getInputStream();
+                    byte[] page = pass(fromServer, toClient, true);
+
+                    cache.put(url, page); // add the page to the cache with the url as the key
                 }
-
-                fromServer.close();
-                toServer.close();
-                server.close();
-
-            } catch(Exception e) {e.printStackTrace();}
+                catch(Exception e) {e.printStackTrace();}
+            }
         }
 
 
         // function for handling https requests
         private void handleHTTPS(String line, InputStream fromClient, OutputStream toClient)
         {
-            Socket server = null;
-            try
+            String[] hostAndPort = line.split(":");
+            String hostName = hostAndPort[0];
+            int port = Integer.parseInt(hostAndPort[1]);
+
+            try(Socket server = new Socket(hostName, port))
             {
-                String[] urlAndPort = line.split(":");
-                String url = urlAndPort[0];
-                int port = Integer.parseInt(urlAndPort[1]);
-
-                InetAddress address = InetAddress.getByName(url);
-                server = new Socket(address, port);
-                server.setSoTimeout(5000);
-
+//                server.setSoTimeout(5000);
                 toClient.write("Connection established".getBytes());
 
                 InputStream fromServer = server.getInputStream();
@@ -172,45 +172,59 @@ class WebProxy {
 
                 // start a thread to pass data from the client to the server
                 // while this thread passes data from the server to the client
-                Thread helper = new Thread(() -> pass(fromClient, toServer));
+                Thread helper = new Thread(() -> pass(fromClient, toServer, false));
                 helper.start();
-                pass(fromServer, toClient);
+                pass(fromServer, toClient, false);
 
                 // wait for thread to finish before closing socket
                 helper.join();
             }
             catch(Exception e) {e.printStackTrace();}
-            finally
-            {
-                try
-                {
-                    if(server != null)
-                        server.close();
-                }
-                catch(Exception ignored) {}
-            }
         }
     }
 
     // passes data from an input stream to an output stream
-    private static void pass(InputStream fromInput, OutputStream toOutput)
+    // if addToCache true, returns the data received - else null
+    private static byte[] pass(InputStream fromInput, OutputStream toOutput, boolean addToCache)
     {
+        byte[] page = null;
         try
         {
             // read from input stream to a buffer and pass to the
             // output stream until all data has been transferred
-            byte[] buffer  = new byte[4096];
+            byte[] buffer = new byte[4096];
             int length;
+
             while((length = fromInput.read(buffer)) > 0)
             {
                 toOutput.write(buffer, 0, length);
                 if(fromInput.available() <= 0)
                     toOutput.flush();
+
+                if(addToCache)
+                    page = merge(page, buffer, length);
             }
             fromInput.close();
             toOutput.close();
         }
-        catch(Exception ignored) {}
+        catch(Exception ignored) {;}
+
+        return page;
+    }
+
+    // simple method for merging two byte arrays
+    public static byte[] merge(byte[] b1, byte[] b2, int b2Length)
+    {
+        if(b2 == null)
+            return b1;
+        if(b1 == null)
+            return Arrays.copyOfRange(b2, 0, b2Length);
+
+        byte[] b3 = new byte[b1.length + b2Length];
+        System.arraycopy(b1, 0, b3, 0, b1.length);
+        System.arraycopy(b2, 0, b3, b1.length, b2Length);
+
+        return b3;
     }
 
 
