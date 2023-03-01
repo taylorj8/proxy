@@ -8,23 +8,23 @@ import java.util.regex.Pattern;
 class WebProxy {
 
     final static int DEFAULT_HTTP_PORT = 80;
-    Listener listener;
-    ServerSocket socket;
-    static HashSet<String> blacklist;
-    static HashMap<String, byte[]> cache;
-    static Pattern[] pattern;
+    private ServerSocket socket;
+    private static HashSet<String> blacklist;
+    private static HashMap<String, byte[]> cache;
+    private static Pattern[] pattern;
+    private static boolean statsMode;
 
     WebProxy(int localPort) {
 
         blacklist = new HashSet<>();        // contains blocked urls
         cache = new HashMap<>();            // contains cached sites
         pattern = initialisePatterns();     // array of patterns needed for regex
+        statsMode = false;                  // if true, shows stats about http requests
 
         // initialise the thread that listens to the client
-        listener = new Listener();
+        Listener listener = new Listener();
         listener.setDaemon(true);
-        // start listening for requests from browser
-        listener.start();
+        listener.start();   // start listening for requests from browser
 
         try
         {
@@ -131,8 +131,14 @@ class WebProxy {
         // function for handling http requests
         private void handleHTTP(String hostName, OutputStream toClient, byte[] request, String url)
         {
+            long startTime = 0;
+            int bytesReceived = 0;
+            if(statsMode)
+                startTime = System.nanoTime();
+
             // if page in cache, fetch it, else get from server
-            if(cache.containsKey(url))
+            boolean cached = cache.containsKey(url);
+            if(cached)
             {
                 ByteArrayInputStream fromCache = new ByteArrayInputStream(cache.get(url));
                 pass(fromCache, toClient, false);
@@ -147,10 +153,20 @@ class WebProxy {
 
                     InputStream fromServer = server.getInputStream();
                     byte[] page = pass(fromServer, toClient, true);
+                    bytesReceived = page.length;
 
                     cache.put(url, page); // add the page to the cache with the url as the key
                 }
                 catch(Exception e) {e.printStackTrace();}
+            }
+
+            if(statsMode)
+            {
+                String prefix = (cached)? "" : "un";
+                System.out.printf("Time taken for %scached request was %d microseconds.\n",
+                        prefix, (System.nanoTime() - startTime)/1000);
+                System.out.printf("Number of bytes received from the web for %scached request was %d.\n\n",
+                        prefix, bytesReceived);
             }
         }
 
@@ -263,6 +279,7 @@ class WebProxy {
                             Proxy running.
                             In order to block a URL x, type block x.
                             To unblock a URL x, type unblock x.
+                            To see timing and bandwidth statistics on http requests, type stats.
                             To terminate the proxy, type quit.
                             """);
 
@@ -277,12 +294,16 @@ class WebProxy {
             if(line.length == 1)
             {
                 // terminate the program if quit typed
-                if(command.equalsIgnoreCase("quit"))
-                    running = false;
-                else if(command.equals("block") || command.equals("unblock"))
-                    System.out.println("Too few arguments entered");
-                else
-                    System.out.println("Invalid command - commands are block, unblock, quit.");
+                switch(command)
+                {
+                    case "stats" -> {
+                        statsMode = !statsMode;
+                        System.out.println((statsMode)? "Stats will be displayed on http requests." : "Stats disabled.");
+                    }
+                    case "quit" -> running = false;
+                    case "block", "unblock" -> System.out.println("Too few arguments entered");
+                    default -> System.out.println("Invalid command - commands are block, unblock, quit.");
+                }
             }
             else if(line.length > 2)
             {
@@ -306,7 +327,7 @@ class WebProxy {
                         else
                         {
                             boolean removed = blacklist.remove(url); // removes url from the blacklist if present
-                            System.out.println(removed? "URL successfully unblocked." : "URL was not found in blacklist.");
+                            System.out.println((removed)? "URL successfully unblocked." : "URL was not found in blacklist.");
                         }
                         valid = true;
                     }
