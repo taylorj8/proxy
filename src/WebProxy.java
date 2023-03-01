@@ -24,6 +24,8 @@ class WebProxy {
         // initialise the thread that listens to the client
         listener = new Listener();
         listener.setDaemon(true);
+        // start listening for requests from browser
+        listener.start();
 
         try
         {
@@ -57,9 +59,9 @@ class WebProxy {
         @Override
         public void run()
         {
-            System.out.println("Request received:");
             try
             {
+                // get the request from the client
                 InputStream fromClient = client.getInputStream();
                 byte[] request = new byte[1024];
                 int length = fromClient.read(request);
@@ -69,11 +71,13 @@ class WebProxy {
                     String strRequest = new String(request, 0, length);
                     System.out.println(strRequest);
 
+                    // get the url
                     String firstLine = "";
                     Matcher m = pattern[0].matcher(strRequest);
                     if(m.find())
                         firstLine = m.group();
 
+                    // check url against blacklist
                     boolean blacklisted = false;
                     for(String url : blacklist)
                     {
@@ -87,12 +91,14 @@ class WebProxy {
                     OutputStream toClient = client.getOutputStream();
                     if(!blacklisted)
                     {
+                        // if https, get url and port and pass to https handler
                         if(firstLine.startsWith("CONNECT"))
                         {
                             m = pattern[1].matcher(strRequest);
                             if(m.find())
                                 handleHTTPS(m.group(), fromClient, toClient);
                         }
+                        // if http, get hostname and pass to http handler
                         else
                         {
                             m = pattern[2].matcher(strRequest);
@@ -119,6 +125,7 @@ class WebProxy {
             }
         }
 
+        // function for handling http requests
         private void handleHTTP(String hostName, OutputStream toClient, byte[] request)
         {
             try
@@ -144,6 +151,7 @@ class WebProxy {
         }
 
 
+        // function for handling https requests
         private void handleHTTPS(String line, InputStream fromClient, OutputStream toClient)
         {
             Socket server = null;
@@ -162,9 +170,9 @@ class WebProxy {
                 InputStream fromServer = server.getInputStream();
                 OutputStream toServer = server.getOutputStream();
 
-                // start a thread to pass data from the client to the server while
-                // this thread passes data from the server to the client
-                HTTPSHelper helper = new HTTPSHelper(fromClient, toServer);
+                // start a thread to pass data from the client to the server
+                // while this thread passes data from the server to the client
+                Thread helper = new Thread(() -> pass(fromClient, toServer));
                 helper.start();
                 pass(fromServer, toClient);
 
@@ -184,39 +192,23 @@ class WebProxy {
         }
     }
 
-    // helper thread for passing data from an inputStream to and outputStream
-    static class HTTPSHelper extends Thread {
-
-        InputStream fromStream;
-        OutputStream toStream;
-
-        HTTPSHelper(InputStream fromStream, OutputStream toStream)
-        {
-            this.fromStream = fromStream;
-            this.toStream = toStream;
-        }
-
-        @Override
-        public void run()
-        {
-            pass(fromStream, toStream);
-        }
-    }
-
-    private static void pass(InputStream in, OutputStream out)
+    // passes data from an input stream to an output stream
+    private static void pass(InputStream fromInput, OutputStream toOutput)
     {
         try
         {
+            // read from input stream to a buffer and pass to the
+            // output stream until all data has been transferred
             byte[] buffer  = new byte[4096];
             int length;
-            while((length = in.read(buffer)) > 0)
+            while((length = fromInput.read(buffer)) > 0)
             {
-                out.write(buffer, 0, length);
-                if(in.available() <= 0)
-                    out.flush();
+                toOutput.write(buffer, 0, length);
+                if(fromInput.available() <= 0)
+                    toOutput.flush();
             }
-            in.close();
-            out.close();
+            fromInput.close();
+            toOutput.close();
         }
         catch(Exception ignored) {}
     }
@@ -251,10 +243,8 @@ class WebProxy {
     }
 
     // starts threads and waits for input on the console
-    private void start()
+    private void go()
     {
-        // start listening for requests from browser
-        listener.start();
         System.out.println("""
                             Proxy running.
                             In order to block a URL x, type block x.
@@ -329,7 +319,7 @@ class WebProxy {
     public static void main(String[] args) {
 
         try {
-            (new WebProxy(4000)).start();
+            (new WebProxy(4000)).go();
             System.out.println("Proxy terminated");
         } catch(java.lang.Exception e) {e.printStackTrace();}
     }
