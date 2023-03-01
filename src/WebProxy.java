@@ -251,26 +251,32 @@ class WebProxy {
     // starts threads and waits for input on the console
     private void start()
     {
+        // start listening for requests from browser
         listener.start();
-        System.out.println("Proxy running. A URL can be entered at any time to block it.");
+        System.out.println("""
+                            Proxy running.
+                            In order to block a URL x, type block x.
+                            To unblock a URL x, type unblock x.
+                            To terminate the proxy, type quit.
+                            """);
 
         Scanner input = new Scanner(System.in);
         boolean running = true;
         while(running)
         {
+            // wait for input from console
             String[] line = input.nextLine().split(" ");
             String command = line[0];
 
             if(line.length == 1)
             {
+                // terminate the program if quit typed
                 if(command.equalsIgnoreCase("quit"))
-                {
                     running = false;
-                }
-                else
-                {
+                else if(command.equals("block") || command.equals("unblock"))
                     System.out.println("Too few arguments entered");
-                }
+                else
+                    System.out.println("Invalid command - commands are block, unblock, quit.");
             }
             else if(line.length > 2)
             {
@@ -284,15 +290,18 @@ class WebProxy {
                 boolean valid = false;
                 while(!valid)
                 {
-
                     if(input.nextLine().equalsIgnoreCase("y"))
                     {
                         if(command.equals("block"))
-                            blacklist.add(url);
+                        {
+                            blacklist.add(url); // adds url to the blacklist
+                            System.out.println("URL blocked.");
+                        }
                         else
-                            blacklist.remove(url);
-
-                        System.out.printf("URL %sed.\n", command);
+                        {
+                            boolean removed = blacklist.remove(url); // removes url from the blacklist if present
+                            System.out.println(removed? "URL successfully unblocked." : "URL was not found in blacklist.");
+                        }
                         valid = true;
                     }
                     else if(input.nextLine().equalsIgnoreCase("n"))
@@ -305,6 +314,10 @@ class WebProxy {
                         System.out.println("Enter y or n:");
                     }
                 }
+            }
+            else
+            {
+                System.out.println("Invalid command - commands are block, unblock, quit.");
             }
         }
     }
