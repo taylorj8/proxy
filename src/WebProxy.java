@@ -1,15 +1,14 @@
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
-import java.lang.reflect.Array;
 import java.net.*;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+
 
 class WebProxy {
 
@@ -20,7 +19,7 @@ class WebProxy {
     int remotePort;
     static Pattern[] pattern;
     URLConnection connection;
-    ArrayList<String> blacklist;
+    HashSet<String> blacklist;
 
     WebProxy(int localPort, int remotePort) {
 
@@ -28,7 +27,7 @@ class WebProxy {
         hostName = "WebProxy";
         latch = new CountDownLatch(1);
         connection = null;
-        blacklist = new ArrayList<>();
+        blacklist = new HashSet<>();
 
         listener = new Listener();
         listener.setDaemon(true);
@@ -47,9 +46,9 @@ class WebProxy {
     static class RequestHandler extends Thread {
 
         private final Socket client;
-        private ArrayList<String> blacklist;
+        private HashSet<String> blacklist;
 
-        public RequestHandler(Socket clientSocket, ArrayList<String> blacklist)
+        public RequestHandler(Socket clientSocket, HashSet<String> blacklist)
         {
             this.client = clientSocket;
             this.blacklist = blacklist;
@@ -58,7 +57,7 @@ class WebProxy {
         @Override
         public void run()
         {
-            System.out.println("Request received");
+            System.out.println("Request received:");
             try
             {
                 InputStream fromClient = client.getInputStream();
@@ -178,8 +177,8 @@ class WebProxy {
 
     static class Blocker extends Thread {
 
-        ArrayList<String> blacklist;
-        Blocker(ArrayList<String> blacklist)
+        HashSet<String> blacklist;
+        Blocker(HashSet<String> blacklist)
         {
             this.blacklist = blacklist;
         }
