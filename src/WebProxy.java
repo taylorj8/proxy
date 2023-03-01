@@ -32,13 +32,13 @@ class WebProxy {
         listener = new Listener();
         listener.setDaemon(true);
 
-        pattern = new Pattern[2];
+        pattern = new Pattern[3];
         pattern[0] = Pattern.compile(".*(?=\\R)");
         pattern[1] = Pattern.compile("(?<=Host: ).*(?=\\R)");
+        pattern[2] = Pattern.compile("(?<=CONNECT ).*(?= )");
 
         try {
             socket = new ServerSocket(localPort);
-//            System.out.println(socket.getLocalSocketAddress());
         }
         catch(java.lang.Exception e) {e.printStackTrace();}
     }
@@ -87,6 +87,15 @@ class WebProxy {
                     OutputStream toClient = client.getOutputStream();
                     if(!blacklisted)
                     {
+                        if(firstLine.startsWith("CONNECT"))
+                        {
+                            m = pattern[1].matcher(strRequest);
+                            if(m.find())
+                                handleHTTPS(m.group(), fromClient, toClient);
+                        }
+
+
+
                         m = pattern[1].matcher(strRequest);
                         String hostName = "";
                         int port = 80;
@@ -122,28 +131,90 @@ class WebProxy {
                                 toClient.write(response, 0, chunkLength);
                             }
 
-                            toServer.close();
-                            fromServer.close();
-                            server.close();
+//                            toServer.close();
+//                            fromServer.close();
+//                            server.close();
                         }
                     }
                     else
                     {
                         toClient.write("This url has been blocked".getBytes());
                     }
-                    toClient.close();
+                    //todo close
+//                    toClient.close();
                 }
-                fromClient.close();
+//                fromClient.close();
             }
             catch(IOException e) {e.printStackTrace();}
             finally
             {
-                try
-                {
-                    client.close();
-                }
-                catch(IOException e) {e.printStackTrace();}
+//                try
+//                {
+//                    client.close();
+//                }
+//                catch(IOException e) {e.printStackTrace();}
             }
+        }
+
+        private void handleHTTPS(String line, InputStream fromClient, OutputStream toClient)
+        {
+            try
+            {
+                String[] urlAndPort = line.split(":");
+                String url = urlAndPort[0];
+                int port = Integer.parseInt(urlAndPort[1]);
+
+//                if(!url.startsWith("http://"))
+//                    url = "http://" + url;
+
+                InetAddress address = InetAddress.getByName(url);
+                Socket server = new Socket(address, port);
+                server.setSoTimeout(5000);
+
+                toClient.write("Connection established".getBytes());
+
+                InputStream fromServer = server.getInputStream();
+                OutputStream toServer = server.getOutputStream();
+
+                (new HTTPSTransfer(fromClient, toServer)).start();
+                (new HTTPSTransfer(fromServer, toClient)).start();
+
+            }
+            catch(Exception e) {e.printStackTrace();}
+
+
+        }
+    }
+
+
+    static class HTTPSTransfer extends Thread {
+
+        InputStream in;
+        OutputStream out;
+
+        HTTPSTransfer(InputStream in, OutputStream out)
+        {
+            this.in = in;
+            this.out = out;
+        }
+
+        @Override
+        public void run()
+        {
+            try
+            {
+                byte[] buffer  = new byte[4096];
+                int length;
+                while((length = in.read(buffer)) > 0)
+                {
+                    out.write(buffer, 0, length);
+                    if(in.available() <= 0)
+                        out.flush();
+                }
+                in.close();
+                out.close();
+            }
+            catch(Exception ignored) {}
         }
     }
 
