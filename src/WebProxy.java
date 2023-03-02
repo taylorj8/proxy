@@ -37,10 +37,11 @@ class WebProxy {
     // add patterns to array
     private Pattern[] initialisePatterns()
     {
-        Pattern[] patterns = new Pattern[3];
+        Pattern[] patterns = new Pattern[4];
         patterns[0] = Pattern.compile(".*(?=\\R)");
         patterns[1] = Pattern.compile("(?<=CONNECT |GET ).*(?= )");
         patterns[2] = Pattern.compile("(?<=Host: ).*(?=\\R)");
+        patterns[3] = Pattern.compile(".*(?=\\r\\n\\r\\n)", Pattern.DOTALL);
 
         return patterns;
     }
@@ -68,13 +69,22 @@ class WebProxy {
                 if(length > 0)
                 {
                     String strRequest = new String(request, 0, length);
+
+                    Matcher matcher;
+                    if(strRequest.startsWith("POST"))
+                    {
+                        // removes unprintable characters at end of POST requests
+                        matcher = pattern[3].matcher(strRequest);
+                        if(matcher.find())
+                            strRequest = matcher.group() + "\n\n";
+                    }
                     System.out.println(strRequest);
 
                     // get the url
                     String firstLine = "";
-                    Matcher m = pattern[0].matcher(strRequest);
-                    if(m.find())
-                        firstLine = m.group();
+                    matcher = pattern[0].matcher(strRequest);
+                    if(matcher.find())
+                        firstLine = matcher.group();
 
                     // check url against blacklist
                     boolean blacklisted = false;
@@ -92,9 +102,9 @@ class WebProxy {
                     {
                         // get url using regex
                         String url = "";
-                        m = pattern[1].matcher(strRequest);
-                        if(m.find())
-                            url = m.group();
+                        matcher = pattern[1].matcher(strRequest);
+                        if(matcher.find())
+                            url = matcher.group();
 
                         // if https, get url and port and pass to https handler
                         if(firstLine.startsWith("CONNECT"))
@@ -104,9 +114,9 @@ class WebProxy {
                         // if http, get hostname and pass to http handler
                         else
                         {
-                            m = pattern[2].matcher(strRequest);
-                            if(m.find())
-                                handleHTTP(m.group(), toClient, request, url, (firstLine.startsWith("GET")));
+                            matcher = pattern[2].matcher(strRequest);
+                            if(matcher.find())
+                                handleHTTP(matcher.group(), toClient, request, url, (firstLine.startsWith("GET")));
                             fromClient.close();
                             toClient.close();
                         }
