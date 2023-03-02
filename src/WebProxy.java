@@ -106,7 +106,7 @@ class WebProxy {
                         {
                             m = pattern[2].matcher(strRequest);
                             if(m.find())
-                                handleHTTP(m.group(), toClient, request, url);
+                                handleHTTP(m.group(), toClient, request, url, (firstLine.startsWith("GET")));
                             fromClient.close();
                             toClient.close();
                         }
@@ -129,7 +129,7 @@ class WebProxy {
         }
 
         // function for handling http requests
-        private void handleHTTP(String hostName, OutputStream toClient, byte[] request, String url)
+        private void handleHTTP(String hostName, OutputStream toClient, byte[] request, String url, boolean getRequest)
         {
             long startTime = 0;
             int bytesReceived = 0;
@@ -152,10 +152,13 @@ class WebProxy {
                     toServer.write(request);
 
                     InputStream fromServer = server.getInputStream();
-                    byte[] page = pass(fromServer, toClient, true);
-                    bytesReceived = page.length;
+                    byte[] page = pass(fromServer, toClient, getRequest);   // cache if GET request
 
-                    cache.put(url, page); // add the page to the cache with the url as the key
+                    if(page != null)
+                    {
+                        bytesReceived = page.length;
+                        cache.put(url, page); // add the page to the cache with the url as the key
+                    }
                 }
                 catch(Exception e) {e.printStackTrace();}
             }
