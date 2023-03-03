@@ -50,7 +50,6 @@ class WebProxy {
     static class RequestHandler extends Thread {
 
         private final Socket client;
-
         public RequestHandler(Socket clientSocket)
         {
             this.client = clientSocket;
@@ -275,13 +274,15 @@ class WebProxy {
                             In order to block a URL x, type block x.
                             To unblock a URL x, type unblock x.
                             To display blocked URLs, type blacklist.
+                            To display cached requests, type cache.
+                            To clear the cache, type clear.
                             To see timing and bandwidth statistics on http requests, type stats.
                             To terminate the proxy, type quit.
                             """);
 
         Scanner input = new Scanner(System.in);
         boolean running = true;
-        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, quit.\n";
+        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, cache, quit.\n";
 
         while(running)
         {
@@ -294,9 +295,15 @@ class WebProxy {
                 // terminate the program if quit typed
                 switch(command)
                 {
+                    case "quit" -> running = false;
+                    case "block", "unblock" -> System.out.println("Too few arguments entered");
                     case "stats" -> {
                         statsMode = !statsMode;
                         System.out.println((statsMode)? "Stats will be displayed on http requests.\n" : "Stats disabled.\n");
+                    }
+                    case "clear" -> {
+                        cache.clear();
+                        System.out.println("The cache has been cleared.\n");
                     }
                     case "blacklist" -> {
                         if(blacklist.isEmpty())
@@ -305,14 +312,23 @@ class WebProxy {
                         {
                             System.out.println("The following urls have been blocked: ");
                             for(String url : blacklist)
-                            {
                                 System.out.println(url);
-                            }
+
                             System.out.println();
                         }
                     }
-                    case "quit" -> running = false;
-                    case "block", "unblock" -> System.out.println("Too few arguments entered");
+                    case "cache" -> {
+                        if(cache.isEmpty())
+                            System.out.println("There are no cached requests.\n");
+                        else
+                        {
+                            System.out.println("The following urls are in the cache: ");
+                            for(String url : cache.keySet())
+                                System.out.println(url);
+
+                            System.out.println();
+                        }
+                    }
                     default -> System.out.println(invalidMessage);
                 }
             }
@@ -333,6 +349,7 @@ class WebProxy {
                         if(command.equals("block"))
                         {
                             blacklist.add(url); // adds url to the blacklist
+                            cache.remove(url);  // removes the associated page from cache if present
                             System.out.println("URL blocked.\n");
                         }
                         else
