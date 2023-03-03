@@ -276,6 +276,7 @@ class WebProxy {
                             Proxy running.
                             In order to block a URL x, type block x.
                             To unblock a URL x, type unblock x.
+                            To display blocked URLs, type show blacklist.
                             To see timing and bandwidth statistics on http requests, type stats.
                             To terminate the proxy, type quit.
                             """);
@@ -306,6 +307,20 @@ class WebProxy {
             {
                 System.out.println("Too many arguments entered");
             }
+            else if(command.equals("show") && line[1].equals("blacklist"))
+            {
+                if(blacklist.isEmpty())
+                    System.out.println("There are no blacklisted URLs.");
+                else
+                {
+                    System.out.println("The following urls have been blocked: ");
+                    for(String url : blacklist)
+                    {
+                        System.out.println(url);
+                    }
+                    System.out.println("\n");
+                }
+            }
             else if(command.equals("block") || command.equals("unblock"))
             {
                 String url = line[1];
@@ -319,12 +334,12 @@ class WebProxy {
                         if(command.equals("block"))
                         {
                             blacklist.add(url); // adds url to the blacklist
-                            System.out.println("URL blocked.");
+                            System.out.println("URL blocked.\n");
                         }
                         else
                         {
                             boolean removed = blacklist.remove(url); // removes url from the blacklist if present
-                            System.out.println((removed)? "URL successfully unblocked." : "URL was not found in blacklist.");
+                            System.out.println((removed)? "URL successfully unblocked.\n" : "URL was not found in blacklist.\n");
                         }
                         valid = true;
                     }
