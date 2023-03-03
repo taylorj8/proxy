@@ -78,9 +78,7 @@ class WebProxy {
                         if(matcher.find())
                             strRequest = matcher.group() + "\n\n";
                     }
-                    System.out.println(strRequest);
-
-                    boolean blacklisted = true;
+                    System.out.print(strRequest);
 
                     OutputStream toClient = client.getOutputStream();
                     // get url using regex
@@ -89,13 +87,14 @@ class WebProxy {
                     if(matcher.find())
                         url = matcher.group();
 
+                    String attemptedUrl = "";
                     // if https, get url and port and pass to https handler
-                    if(strRequest.startsWith("CONNECT") && !blacklist.contains(url.split(":")[0]))
+                    if(strRequest.startsWith("CONNECT") && !blacklist.contains(attemptedUrl = url.split(":")[0]))
                     {
                         handleHTTPS(url, fromClient, toClient);
                     }
                     // if http, get hostname and pass to http handler
-                    else if(!blacklist.contains(url))
+                    else if(!blacklist.contains(attemptedUrl = url))
                     {
                         matcher = pattern[2].matcher(strRequest);
                         if(matcher.find())
@@ -105,9 +104,8 @@ class WebProxy {
                     }
                     else
                     {
-                        String blockedMessage = "This url has been blocked";
-                        System.out.println(blockedMessage);
-                        toClient.write(blockedMessage.getBytes());
+                        System.out.printf("Client attempted to access blocked URL %s.\n\n", attemptedUrl);
+                        toClient.write("This url has been blocked".getBytes());
                     }
                 }
             }
@@ -318,7 +316,7 @@ class WebProxy {
                     {
                         System.out.println(url);
                     }
-                    System.out.println("\n");
+                    System.out.println();
                 }
             }
             else if(command.equals("block") || command.equals("unblock"))
