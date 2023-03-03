@@ -124,7 +124,7 @@ class WebProxy {
         {
             long startTime = 0;
             int bytesReceived = 0;
-            if(statsMode)
+            if(statsMode && getRequest)
                 startTime = System.nanoTime();
 
             // if page in cache, fetch it, else get from server
@@ -154,12 +154,12 @@ class WebProxy {
                 catch(Exception e) {e.printStackTrace();}
             }
 
-            if(statsMode)
+            if(statsMode && getRequest)
             {
                 String prefix = (cached)? "" : "un";
                 System.out.printf("Time taken for %scached request was %d microseconds.\n",
                         prefix, (System.nanoTime() - startTime)/1000);
-                System.out.printf("Number of bytes received from the web for %scached request was %d.\n\n",
+                System.out.printf("Number of bytes received from server for %scached request was %d.\n\n",
                         prefix, bytesReceived);
             }
         }
@@ -174,7 +174,6 @@ class WebProxy {
 
             try(Socket server = new Socket(hostName, port))
             {
-//                server.setSoTimeout(5000);
                 toClient.write("Connection established".getBytes());
 
                 InputStream fromServer = server.getInputStream();
