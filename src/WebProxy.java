@@ -14,6 +14,18 @@ class WebProxy {
     private static Pattern[] pattern;
     private static boolean statsMode;
 
+
+    // Main function - creates Proxy server
+    public static void main(String[] args) {
+
+        try {
+            (new WebProxy(4000)).go();
+        } catch(java.lang.Exception e) {e.printStackTrace();}
+
+        System.out.println("Proxy terminated");
+    }
+
+
     WebProxy(int localPort) {
 
         blacklist = new HashSet<>();        // contains blocked urls
@@ -46,6 +58,142 @@ class WebProxy {
         patterns[3] = Pattern.compile(".*(?=\\r\\n\\r\\n)", Pattern.DOTALL);
 
         return patterns;
+    }
+
+
+    // Listens for incoming requests and hands them off to threads to begin listening again
+    class Listener extends Thread {
+
+        // Listen for incoming requests
+        @Override
+        public void run() {
+
+            // endlessly loop until request received
+            while(true)
+            {
+                Socket client = null;
+                try
+                {
+                    // accept request and hand it off to a thread
+                    client = socket.accept();
+                    new RequestHandler(client).start();
+                }
+                catch(Exception ignored) {}
+            }
+        }
+    }
+
+
+    // starts threads and waits for input on the console
+    private void go()
+    {
+        System.out.println("""
+                            Proxy running.
+                            In order to block a URL x, type block x.
+                            To unblock a URL x, type unblock x.
+                            To display blocked URLs, type blacklist.
+                            To display cached requests, type cache.
+                            To clear the cache, type clear.
+                            To see timing and bandwidth statistics on http requests, type stats.
+                            To terminate the proxy, type quit.
+                            """);
+
+        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, cache, quit.\n";
+        Scanner input = new Scanner(System.in);
+        boolean running = true;
+
+        while(running)
+        {
+            // wait for input from console
+            String[] line = input.nextLine().split(" ");
+            String command = line[0];
+
+            // handles the commands from the user
+            if(line.length == 1)
+            {
+                switch(command)
+                {
+                    case "quit" -> running = false;
+                    case "block", "unblock" -> System.out.println("Too few arguments entered");
+                    case "stats" -> {
+                        statsMode = !statsMode;
+                        System.out.println((statsMode)? "Stats will be displayed on http requests.\n" : "Stats disabled.\n");
+                    }
+                    case "clear" -> {
+                        cache.clear();
+                        System.out.println("The cache has been cleared.\n");
+                    }
+                    case "blacklist" -> {
+                        if(blacklist.isEmpty())
+                            System.out.println("There are no blacklisted URLs.\n");
+                        else
+                        {
+                            System.out.println("The following urls have been blocked: ");
+                            for(String url : blacklist)
+                                System.out.println(url);
+
+                            System.out.println();
+                        }
+                    }
+                    case "cache" -> {
+                        if(cache.isEmpty())
+                            System.out.println("There are no cached requests.\n");
+                        else
+                        {
+                            System.out.println("The following urls are in the cache: ");
+                            for(String url : cache.keySet())
+                                System.out.println(url);
+
+                            System.out.println();
+                        }
+                    }
+                    default -> System.out.println(invalidMessage);
+                }
+            }
+            else if(line.length > 2)
+            {
+                System.out.println("Too many arguments entered");
+            }
+            else if(command.equals("block") || command.equals("unblock"))
+            {
+                String url = line[1];
+                System.out.printf("Are you sure you want to %s \"%s\"? (y/n):\n", command, url);
+
+                boolean valid = false;
+                while(!valid)
+                {
+                    if(input.nextLine().equalsIgnoreCase("y"))
+                    {
+                        if(command.equals("block"))
+                        {
+                            blacklist.add(url); // adds url to the blacklist
+                            cache.remove(url);  // removes the associated page from cache if present
+                            System.out.println("URL blocked.\n");
+                        }
+                        else
+                        {
+                            boolean removed = blacklist.remove(url); // removes url from the blacklist if present
+                            System.out.println((removed)? "URL successfully unblocked.\n" : "URL was not found in blacklist.\n");
+                        }
+                        valid = true;
+                    }
+                    else if(input.nextLine().equalsIgnoreCase("n"))
+                    {
+                        System.out.printf("URL not %sed.\n", command);
+                        valid = true;
+                    }
+                    else
+                    {
+                        System.out.println("Enter y or n:");
+                    }
+                }
+            }
+            else
+            {
+                System.out.println(invalidMessage);
+            }
+        }
+        input.close();
     }
 
 
@@ -247,153 +395,6 @@ class WebProxy {
         System.arraycopy(b2, 0, b3, b1.length, b2Length);
 
         return b3;
-    }
-
-
-    // Listens for incoming requests and hands them off to threads to begin listening again
-    class Listener extends Thread {
-
-        // Listen for incoming requests
-        @Override
-        public void run() {
-
-            // endlessly loop until request received
-            while(true)
-            {
-                Socket client = null;
-                try
-                {
-                    // accept request and hand it off to a thread
-                    client = socket.accept();
-                    new RequestHandler(client).start();
-                }
-                catch(Exception ignored) {}
-            }
-        }
-    }
-
-
-    // starts threads and waits for input on the console
-    private void go()
-    {
-        System.out.println("""
-                            Proxy running.
-                            In order to block a URL x, type block x.
-                            To unblock a URL x, type unblock x.
-                            To display blocked URLs, type blacklist.
-                            To display cached requests, type cache.
-                            To clear the cache, type clear.
-                            To see timing and bandwidth statistics on http requests, type stats.
-                            To terminate the proxy, type quit.
-                            """);
-
-        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, cache, quit.\n";
-        Scanner input = new Scanner(System.in);
-        boolean running = true;
-
-        while(running)
-        {
-            // wait for input from console
-            String[] line = input.nextLine().split(" ");
-            String command = line[0];
-
-            // handles the commands from the user
-            if(line.length == 1)
-            {
-                switch(command)
-                {
-                    case "quit" -> running = false;
-                    case "block", "unblock" -> System.out.println("Too few arguments entered");
-                    case "stats" -> {
-                        statsMode = !statsMode;
-                        System.out.println((statsMode)? "Stats will be displayed on http requests.\n" : "Stats disabled.\n");
-                    }
-                    case "clear" -> {
-                        cache.clear();
-                        System.out.println("The cache has been cleared.\n");
-                    }
-                    case "blacklist" -> {
-                        if(blacklist.isEmpty())
-                            System.out.println("There are no blacklisted URLs.\n");
-                        else
-                        {
-                            System.out.println("The following urls have been blocked: ");
-                            for(String url : blacklist)
-                                System.out.println(url);
-
-                            System.out.println();
-                        }
-                    }
-                    case "cache" -> {
-                        if(cache.isEmpty())
-                            System.out.println("There are no cached requests.\n");
-                        else
-                        {
-                            System.out.println("The following urls are in the cache: ");
-                            for(String url : cache.keySet())
-                                System.out.println(url);
-
-                            System.out.println();
-                        }
-                    }
-                    default -> System.out.println(invalidMessage);
-                }
-            }
-            else if(line.length > 2)
-            {
-                System.out.println("Too many arguments entered");
-            }
-            else if(command.equals("block") || command.equals("unblock"))
-            {
-                String url = line[1];
-                System.out.printf("Are you sure you want to %s \"%s\"? (y/n):\n", command, url);
-
-                boolean valid = false;
-                while(!valid)
-                {
-                    if(input.nextLine().equalsIgnoreCase("y"))
-                    {
-                        if(command.equals("block"))
-                        {
-                            blacklist.add(url); // adds url to the blacklist
-                            cache.remove(url);  // removes the associated page from cache if present
-                            System.out.println("URL blocked.\n");
-                        }
-                        else
-                        {
-                            boolean removed = blacklist.remove(url); // removes url from the blacklist if present
-                            System.out.println((removed)? "URL successfully unblocked.\n" : "URL was not found in blacklist.\n");
-                        }
-                        valid = true;
-                    }
-                    else if(input.nextLine().equalsIgnoreCase("n"))
-                    {
-                        System.out.printf("URL not %sed.\n", command);
-                        valid = true;
-                    }
-                    else
-                    {
-                        System.out.println("Enter y or n:");
-                    }
-                }
-            }
-            else
-            {
-                System.out.println(invalidMessage);
-            }
-        }
-        input.close();
-    }
-
-
-    // Main function - creates Proxy server
-    public static void main(String[] args) {
-
-        try {
-            (new WebProxy(4000)).go();
-        } catch(java.lang.Exception e) {e.printStackTrace();}
-
-        System.out.println("Proxy terminated");
     }
 }
 
