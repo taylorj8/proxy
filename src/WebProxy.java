@@ -87,14 +87,13 @@ class WebProxy {
                     if(matcher.find())
                         url = matcher.group();
 
-                    String attemptedUrl = "";
                     // if https, get url and port and pass to https handler
-                    if(strRequest.startsWith("CONNECT") && !blacklist.contains(attemptedUrl = url.split(":")[0]))
+                    if(strRequest.startsWith("CONNECT") && !blacklist.contains(url.split(":")[0]))
                     {
                         handleHTTPS(url, fromClient, toClient);
                     }
                     // if http, get hostname and pass to http handler
-                    else if(!blacklist.contains(attemptedUrl = url))
+                    else if(!blacklist.contains(url))
                     {
                         matcher = pattern[2].matcher(strRequest);
                         if(matcher.find())
@@ -104,8 +103,8 @@ class WebProxy {
                     }
                     else
                     {
-                        System.out.printf("Client attempted to access blocked URL %s.\n\n", attemptedUrl);
-                        toClient.write("This url has been blocked".getBytes());
+                        System.out.printf("Client attempted to access blocked URL %s.\n\n", url);
+                        toClient.write("This URL has been blocked".getBytes());
                     }
                 }
             }
@@ -134,7 +133,7 @@ class WebProxy {
             {
                 ByteArrayInputStream fromCache = new ByteArrayInputStream(cache.get(url));
                 pass(fromCache, toClient, false);
-                System.out.println("Page fetched from cache");
+                System.out.println("Page fetched from cache\n");
             }
             else
             {
@@ -274,13 +273,15 @@ class WebProxy {
                             Proxy running.
                             In order to block a URL x, type block x.
                             To unblock a URL x, type unblock x.
-                            To display blocked URLs, type show blacklist.
+                            To display blocked URLs, type blacklist.
                             To see timing and bandwidth statistics on http requests, type stats.
                             To terminate the proxy, type quit.
                             """);
 
         Scanner input = new Scanner(System.in);
         boolean running = true;
+        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, quit.\n";
+
         while(running)
         {
             // wait for input from console
@@ -294,30 +295,29 @@ class WebProxy {
                 {
                     case "stats" -> {
                         statsMode = !statsMode;
-                        System.out.println((statsMode)? "Stats will be displayed on http requests." : "Stats disabled.");
+                        System.out.println((statsMode)? "Stats will be displayed on http requests.\n" : "Stats disabled.\n");
+                    }
+                    case "blacklist" -> {
+                        if(blacklist.isEmpty())
+                            System.out.println("There are no blacklisted URLs.\n");
+                        else
+                        {
+                            System.out.println("The following urls have been blocked: ");
+                            for(String url : blacklist)
+                            {
+                                System.out.println(url);
+                            }
+                            System.out.println();
+                        }
                     }
                     case "quit" -> running = false;
                     case "block", "unblock" -> System.out.println("Too few arguments entered");
-                    default -> System.out.println("Invalid command - commands are block, unblock, quit.");
+                    default -> System.out.println(invalidMessage);
                 }
             }
             else if(line.length > 2)
             {
                 System.out.println("Too many arguments entered");
-            }
-            else if(command.equals("show") && line[1].equals("blacklist"))
-            {
-                if(blacklist.isEmpty())
-                    System.out.println("There are no blacklisted URLs.");
-                else
-                {
-                    System.out.println("The following urls have been blocked: ");
-                    for(String url : blacklist)
-                    {
-                        System.out.println(url);
-                    }
-                    System.out.println();
-                }
             }
             else if(command.equals("block") || command.equals("unblock"))
             {
@@ -354,7 +354,7 @@ class WebProxy {
             }
             else
             {
-                System.out.println("Invalid command - commands are block, unblock, quit.");
+                System.out.println(invalidMessage);
             }
         }
         input.close();
