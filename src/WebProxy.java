@@ -21,20 +21,22 @@ class WebProxy {
         pattern = initialisePatterns();     // array of patterns needed for regex
         statsMode = false;                  // if true, shows stats about http requests
 
-        // initialise the thread that listens to the client
-        Listener listener = new Listener();
-        listener.setDaemon(true);
-        listener.start();   // start listening for requests from browser
-
         try
         {
             // start server socket on the specified port
             socket = new ServerSocket(localPort);
         }
         catch(java.lang.Exception e) {e.printStackTrace();}
+
+        // initialise the thread that listens to the client
+        Listener listener = new Listener();
+        listener.setDaemon(true);
+        listener.start();   // start listening for requests from browser
     }
 
+
     // add patterns to array
+    // these patterns are needed at various points in the program for parsing requests
     private Pattern[] initialisePatterns()
     {
         Pattern[] patterns = new Pattern[4];
@@ -45,6 +47,7 @@ class WebProxy {
 
         return patterns;
     }
+
 
     // thread for handling requests from the client
     static class RequestHandler extends Thread {
@@ -65,6 +68,7 @@ class WebProxy {
                 byte[] request = new byte[1024];
                 int length = fromClient.read(request);
 
+                // if request received
                 if(length > 0)
                 {
                     String strRequest = new String(request, 0, length);
@@ -72,12 +76,12 @@ class WebProxy {
                     Matcher matcher;
                     if(strRequest.startsWith("POST"))
                     {
-                        // removes unprintable characters at end of POST requests
+                        // removes unreadable characters at end of POST requests
                         matcher = pattern[3].matcher(strRequest);
                         if(matcher.find())
                             strRequest = matcher.group() + "\n\n";
                     }
-                    System.out.print(strRequest);
+                    System.out.print(strRequest);   // print request to management console
 
                     OutputStream toClient = client.getOutputStream();
                     // get url using regex
@@ -98,12 +102,14 @@ class WebProxy {
                         if(matcher.find())
                             handleHTTP(matcher.group(), toClient, request, url, (strRequest.startsWith("GET")));
                         fromClient.close();
-                        toClient.close();
                     }
+                    // if the url is on the blacklist, ignore request and return error message
                     else
                     {
                         System.out.printf("Client attempted to access blocked URL %s.\n\n", url);
                         toClient.write("This URL has been blocked".getBytes());
+                        fromClient.close();
+                        toClient.close();
                     }
                 }
             }
@@ -118,9 +124,11 @@ class WebProxy {
             }
         }
 
+
         // function for handling http requests
         private void handleHTTP(String hostName, OutputStream toClient, byte[] request, String url, boolean getRequest)
         {
+            // statistics for compared cached and uncached requests
             long startTime = 0;
             int bytesReceived = 0;
             if(statsMode && getRequest)
@@ -148,6 +156,7 @@ class WebProxy {
                 catch(Exception e) {e.printStackTrace();}
             }
 
+            // print statistics about request if in stats mode
             if(statsMode && getRequest)
             {
                 String prefix = (cached)? "" : "un";
@@ -162,6 +171,7 @@ class WebProxy {
         // function for handling https requests
         private void handleHTTPS(String line, InputStream fromClient, OutputStream toClient)
         {
+            // get host and port from the line
             String[] hostAndPort = line.split(":");
             String hostName = hostAndPort[0];
             int port = Integer.parseInt(hostAndPort[1]);
@@ -169,7 +179,6 @@ class WebProxy {
             try(Socket server = new Socket(hostName, port))
             {
                 toClient.write("Connection established".getBytes());
-
                 InputStream fromServer = server.getInputStream();
                 OutputStream toServer = server.getOutputStream();
 
@@ -185,6 +194,7 @@ class WebProxy {
             catch(Exception e) {e.printStackTrace();}
         }
     }
+
 
     // passes data from an input stream to an output stream and
     // the number of bytes received from the server is returned
@@ -222,7 +232,9 @@ class WebProxy {
         return bytesReceived;
     }
 
+
     // simple method for merging two byte arrays
+    // b2 is a fixed length of 4096, data may not fill that so b2Length variable needed
     public static byte[] merge(byte[] b1, byte[] b2, int b2Length)
     {
         if(b2 == null)
@@ -238,33 +250,28 @@ class WebProxy {
     }
 
 
-    /**
-     * Listener thread
-     * Listens for incoming requests and hands them off to threads to begin listening again
-     */
+    // Listens for incoming requests and hands them off to threads to begin listening again
     class Listener extends Thread {
 
         // Listen for incoming requests
         @Override
         public void run() {
 
-            try {
-
-                while(true)
+            // endlessly loop until request received
+            while(true)
+            {
+                Socket client = null;
+                try
                 {
-                    Socket client = null;
-                    try
-                    {
-                        // accept request and hand it off to a thread
-                        client = socket.accept();
-                        new RequestHandler(client).start();
-                    }
-                    catch(Exception ignored) {}
+                    // accept request and hand it off to a thread
+                    client = socket.accept();
+                    new RequestHandler(client).start();
                 }
+                catch(Exception ignored) {}
             }
-            catch(Exception e) {e.printStackTrace();}
         }
     }
+
 
     // starts threads and waits for input on the console
     private void go()
@@ -280,9 +287,9 @@ class WebProxy {
                             To terminate the proxy, type quit.
                             """);
 
+        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, cache, quit.\n";
         Scanner input = new Scanner(System.in);
         boolean running = true;
-        String invalidMessage = "Invalid command - commands are block, unblock, stats, blacklist, cache, quit.\n";
 
         while(running)
         {
@@ -290,9 +297,9 @@ class WebProxy {
             String[] line = input.nextLine().split(" ");
             String command = line[0];
 
+            // handles the commands from the user
             if(line.length == 1)
             {
-                // terminate the program if quit typed
                 switch(command)
                 {
                     case "quit" -> running = false;
@@ -378,13 +385,15 @@ class WebProxy {
         input.close();
     }
 
+
     // Main function - creates Proxy server
     public static void main(String[] args) {
 
         try {
             (new WebProxy(4000)).go();
-            System.out.println("Proxy terminated");
         } catch(java.lang.Exception e) {e.printStackTrace();}
+
+        System.out.println("Proxy terminated");
     }
 }
 
