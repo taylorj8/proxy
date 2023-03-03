@@ -132,7 +132,7 @@ class WebProxy {
             if(cached)
             {
                 ByteArrayInputStream fromCache = new ByteArrayInputStream(cache.get(url));
-                pass(fromCache, toClient, false);
+                pass(fromCache, toClient, null);
                 System.out.println("Page fetched from cache\n");
             }
             else
@@ -141,15 +141,10 @@ class WebProxy {
                 {
                     OutputStream toServer = server.getOutputStream();
                     toServer.write(request);
-
                     InputStream fromServer = server.getInputStream();
-                    byte[] page = pass(fromServer, toClient, getRequest);   // cache if GET request
 
-                    if(page != null)
-                    {
-                        bytesReceived = page.length;
-                        cache.put(url, page); // add the page to the cache with the url as the key
-                    }
+                    // if GET request, pass in url and cache page, otherwise pass in null for no caching
+                    bytesReceived = pass(fromServer, toClient, (getRequest)? url : null);
                 }
                 catch(Exception e) {e.printStackTrace();}
             }
@@ -181,9 +176,9 @@ class WebProxy {
 
                 // start a thread to pass data from the client to the server
                 // while this thread passes data from the server to the client
-                Thread helper = new Thread(() -> pass(fromClient, toServer, false));
+                Thread helper = new Thread(() -> pass(fromClient, toServer, null));
                 helper.start();
-                pass(fromServer, toClient, false);
+                pass(fromServer, toClient, null);
 
                 // wait for thread to finish before closing socket
                 helper.join();
@@ -192,9 +187,10 @@ class WebProxy {
         }
     }
 
-    // passes data from an input stream to an output stream
-    // if addToCache true, returns the data received - else null
-    private static byte[] pass(InputStream fromInput, OutputStream toOutput, boolean addToCache)
+    // passes data from an input stream to an output stream and
+    // the number of bytes received from the server is returned
+    // if cacheUrl is not null, the bytes are saved to cache with that url
+    private static int pass(InputStream fromInput, OutputStream toOutput, String cacheUrl)
     {
         byte[] page = null;
         try
@@ -210,15 +206,21 @@ class WebProxy {
                 if(fromInput.available() <= 0)
                     toOutput.flush();
 
-                if(addToCache)
+                if(cacheUrl != null)
                     page = merge(page, buffer, length);
             }
             fromInput.close();
             toOutput.close();
         }
-        catch(Exception ignored) {;}
+        catch(Exception ignored) {}
 
-        return page;
+        int bytesReceived = 0;
+        if(page != null)
+        {
+            bytesReceived = page.length;
+            cache.put(cacheUrl, page); // add the page to the cache with the url as the key
+        }
+        return bytesReceived;
     }
 
     // simple method for merging two byte arrays
