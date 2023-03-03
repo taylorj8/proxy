@@ -80,50 +80,34 @@ class WebProxy {
                     }
                     System.out.println(strRequest);
 
-                    // get the url
-                    String firstLine = "";
-                    matcher = pattern[0].matcher(strRequest);
-                    if(matcher.find())
-                        firstLine = matcher.group();
-
-                    // check url against blacklist
-                    boolean blacklisted = false;
-                    for(String url : blacklist)
-                    {
-                        if(firstLine.contains(url))
-                        {
-                            blacklisted = true;
-                            break;
-                        }
-                    }
+                    boolean blacklisted = true;
 
                     OutputStream toClient = client.getOutputStream();
-                    if(!blacklisted)
-                    {
-                        // get url using regex
-                        String url = "";
-                        matcher = pattern[1].matcher(strRequest);
-                        if(matcher.find())
-                            url = matcher.group();
+                    // get url using regex
+                    String url = "";
+                    matcher = pattern[1].matcher(strRequest);
+                    if(matcher.find())
+                        url = matcher.group();
 
-                        // if https, get url and port and pass to https handler
-                        if(firstLine.startsWith("CONNECT"))
-                        {
-                            handleHTTPS(url, fromClient, toClient);
-                        }
-                        // if http, get hostname and pass to http handler
-                        else
-                        {
-                            matcher = pattern[2].matcher(strRequest);
-                            if(matcher.find())
-                                handleHTTP(matcher.group(), toClient, request, url, (firstLine.startsWith("GET")));
-                            fromClient.close();
-                            toClient.close();
-                        }
+                    // if https, get url and port and pass to https handler
+                    if(strRequest.startsWith("CONNECT") && !blacklist.contains(url.split(":")[0]))
+                    {
+                        handleHTTPS(url, fromClient, toClient);
+                    }
+                    // if http, get hostname and pass to http handler
+                    else if(!blacklist.contains(url))
+                    {
+                        matcher = pattern[2].matcher(strRequest);
+                        if(matcher.find())
+                            handleHTTP(matcher.group(), toClient, request, url, (strRequest.startsWith("GET")));
+                        fromClient.close();
+                        toClient.close();
                     }
                     else
                     {
-                        toClient.write("This url has been blocked".getBytes());
+                        String blockedMessage = "This url has been blocked";
+                        System.out.println(blockedMessage);
+                        toClient.write(blockedMessage.getBytes());
                     }
                 }
             }
